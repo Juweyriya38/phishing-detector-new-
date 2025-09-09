@@ -28,7 +28,6 @@ MAX_REQUESTS_WINDOW   = 15           # 15 requests in 5s = block
 BASE_BLOCK_SECONDS    = 20
 BLOCK_MULTIPLIER      = 2
 MAX_BLOCK_SECONDS     = 10 * 60      # 10 minutes
-TEMP_PASS             = 3
 BLOCKED_IPS_FILE      = "blocked_ips.json"
 USE_X_FORWARDED_FOR   = True         # honor X-Forwarded-For when behind a proxy
 ADMIN_TOKEN           = os.getenv("ADMIN_TOKEN", None)  # optional for /unblock
@@ -39,6 +38,10 @@ COMMENTS_FOLDER       = os.path.join(APP_DIR, "comments")
 TRASH_FILE            = os.path.join(APP_DIR, "trash.json")
 PROFILE_UPLOAD_DIR    = os.path.join(APP_DIR, "static", "assets", "profile_images")
 
+# Temporary password policy (admin-issued)
+TEMP_PASSWORD_TTL_SECONDS   = int(os.getenv('TEMP_PASSWORD_TTL_SECONDS', '180'))  # default 3 minutes
+TEMP_PASSWORD_MAX_GRANTS    = int(os.getenv('TEMP_PASSWORD_MAX_GRANTS', '4'))     # default 4 times per user
+
 
 # ----------------------------
 # App setup
@@ -48,7 +51,7 @@ app = Flask(__name__, static_folder=os.path.join(APP_DIR, 'static'), template_fo
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'a_very_secret_key') # Use a strong, random key in production
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=10)
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -70,6 +73,10 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)
     admin_reset_count = db.Column(db.Integer, nullable=False, default=0)
     profile_image = db.Column(db.String(255), nullable=True)
+    # Temporary password support
+    temp_password_hash = db.Column(db.String(255), nullable=True)
+    temp_password_expires_at = db.Column(db.DateTime, nullable=True)
+    temp_password_grants = db.Column(db.Integer, nullable=False, default=0)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -95,6 +102,15 @@ with app.app_context():
         if 'profile_image' not in cols:
             with db.engine.begin() as conn:
                 conn.execute(db.text('ALTER TABLE user ADD COLUMN profile_image VARCHAR(255)'))
+        if 'temp_password_hash' not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(db.text('ALTER TABLE user ADD COLUMN temp_password_hash VARCHAR(255)'))
+        if 'temp_password_expires_at' not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(db.text('ALTER TABLE user ADD COLUMN temp_password_expires_at DATETIME'))
+        if 'temp_password_grants' not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(db.text('ALTER TABLE user ADD COLUMN temp_password_grants INTEGER DEFAULT 0 NOT NULL'))
     except Exception as e:
         # Table might not exist yet; create all
         try:
@@ -330,8 +346,10 @@ def block_ip(ip: str, reason: str):
         blocked_history[ip] = hist
 
     save_blocked()
+    # Suggest DDOS indicator in message if penalty escalates high
+    ddos_hint = " (possible DDoS)" if penalty >= MAX_BLOCK_SECONDS // 2 else ""
     try:
-        app.logger.warning(f"BLOCKED {ip} - {reason} - attempts={hist['attempts']} penalty={penalty}s")
+        app.logger.warning(f"BLOCKED {ip} - {reason}{ddos_hint} - attempts={hist['attempts']} penalty={penalty}s")
     except Exception:
         pass
     return render_countdown(penalty)
@@ -356,7 +374,12 @@ def waf_before():
         dq.append(ts)
         prune_window(dq, WINDOW_SECONDS, ts)
         if len(dq) >= MAX_REQUESTS_WINDOW:
-            return block_ip(ip, f"Flooding: {len(dq)} req in {WINDOW_SECONDS}s")
+            method = (request.method or 'GET').upper()
+            if method == 'POST':
+                reason = f"Brute-force: {len(dq)} POSTs in {WINDOW_SECONDS}s"
+            else:
+                reason = f"Flooding: {len(dq)} {method}s in {WINDOW_SECONDS}s"
+            return block_ip(ip, reason)
 
 @app.after_request
 def waf_after(response):
@@ -369,7 +392,13 @@ def waf_after(response):
             dq.append(ts)
             prune_window(dq, WINDOW_SECONDS, ts)
             if len(dq) >= MAX_REQUESTS_WINDOW:
-                return block_ip(ip, f"Too many {status} in {WINDOW_SECONDS}s")
+                if status == 404:
+                    reason = f"Fuzzing: {len(dq)} 404s in {WINDOW_SECONDS}s"
+                elif status == 200:
+                    reason = f"Flooding: {len(dq)} 200s in {WINDOW_SECONDS}s"
+                else:
+                    reason = f"Excessive responses: {len(dq)} {status} in {WINDOW_SECONDS}s"
+                return block_ip(ip, reason)
     return response
 
 @app.before_request
@@ -559,16 +588,35 @@ def login_page():
         password = request.form.get('password')
         # Allow login by username OR email
         user = User.query.filter((User.username==identifier)|(User.email==identifier)).first()
-        if user and user.check_password(password):
-            login_user(user)
-            session.permanent = True
-            session["last_activity"] = datetime.utcnow().isoformat()
-            next_page = request.args.get('next')
-            if next_page and urlparse(next_page).netloc == request.host:
-                return redirect(next_page)
-            return redirect(url_for('dashboard_page'))
-        else:
-            return render_template('login/index.html', mode='login', error='Invalid username or password')
+        if user:
+            # First try permanent password
+            if user.check_password(password):
+                login_user(user)
+                session.permanent = True
+                session["last_activity"] = datetime.utcnow().isoformat()
+                next_page = request.args.get('next')
+                if next_page and urlparse(next_page).netloc == request.host:
+                    return redirect(next_page)
+                return redirect(url_for('dashboard_page'))
+
+            # Then try valid temporary password (unexpired)
+            if user.temp_password_hash and user.temp_password_expires_at:
+                if datetime.utcnow() <= (user.temp_password_expires_at or datetime.utcnow() - timedelta(seconds=1)):
+                    if check_password_hash(user.temp_password_hash, password):
+                        # One-time use: immediately clear temp credentials
+                        user.temp_password_hash = None
+                        user.temp_password_expires_at = None
+                        db.session.commit()
+                        login_user(user)
+                        session.permanent = True
+                        session["last_activity"] = datetime.utcnow().isoformat()
+                        session['used_temp_password'] = True
+                        next_page = request.args.get('next')
+                        if next_page and urlparse(next_page).netloc == request.host:
+                            return redirect(next_page)
+                        return redirect(url_for('dashboard_page'))
+
+        return render_template('login/index.html', mode='login', error='Invalid username or password')
     return render_template('login/index.html', mode='login', error=None)
 
 @app.route("/signup", methods=["GET", "POST"])
@@ -624,13 +672,14 @@ def admin_users_page():
 def admin_trash_page():
     if not session.get('admin'):
         return redirect(url_for('admin_login'))
-    return send_from_directory(os.path.dirname(__file__), os.path.join('templates', 'admin_trash.html'))
+    # Render directly from templates to avoid 404s
+    return render_template('admin_trash.html')
 
 @app.route('/admin/trash.html', methods=['GET'])
 def admin_trash_page_html():
     if not session.get('admin'):
         return redirect(url_for('admin_login'))
-    return send_from_directory(os.path.dirname(__file__), os.path.join('templates', 'admin_trash.html'))
+    return render_template('admin_trash.html')
 
 @app.route('/admin/users/list', methods=['GET'])
 def admin_users_list():
@@ -673,14 +722,16 @@ def admin_reset_password(user_id: int):
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    if user.admin_reset_count >= TEMP_PASS:
-        return jsonify({'error': 'Password can only be reset by admin once'}), 400
     data = request.get_json(silent=True) or {}
     new_password = data.get('new_password') or ''
     if not is_strong_password(new_password):
         return jsonify({'error': 'Password must be 8+ chars, include an uppercase letter and a number'}), 400
     user.set_password(new_password)
+    # Admin change allowed any time; do not enforce once-only limit
     user.admin_reset_count = user.admin_reset_count + 1
+    # Invalidate any active temporary password
+    user.temp_password_hash = None
+    user.temp_password_expires_at = None
     db.session.commit()
     return jsonify({'message': 'Password reset successfully'})
 
@@ -699,14 +750,18 @@ def admin_set_temp_password(user_id: int):
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    if user.admin_reset_count >= TEMP_PASS:
-        return jsonify({'error': 'Password can only be reset by admin once'}), 400
-    temp = _generate_temp_password(12)
-    user.set_password(temp)
-    user.admin_reset_count = user.admin_reset_count + 1
+    # Enforce per-user temp password grant limit
+    if user.temp_password_grants >= TEMP_PASSWORD_MAX_GRANTS:
+        return jsonify({'error': f'Temporary password limit reached ({TEMP_PASSWORD_MAX_GRANTS})'}), 400
+
+    # Generate and store temp password (hashed) with expiry
+    temp_plain = _generate_temp_password(12)
+    user.temp_password_hash = generate_password_hash(temp_plain)
+    user.temp_password_expires_at = datetime.utcnow() + timedelta(seconds=TEMP_PASSWORD_TTL_SECONDS)
+    user.temp_password_grants = user.temp_password_grants + 1
     db.session.commit()
     # Return plaintext temp password so admin can share once
-    return jsonify({'message': 'Temporary password set', 'temporary_password': temp})
+    return jsonify({'message': 'Temporary password set', 'temporary_password': temp_plain, 'expires_in_seconds': TEMP_PASSWORD_TTL_SECONDS, 'grants_used': user.temp_password_grants, 'grants_limit': TEMP_PASSWORD_MAX_GRANTS})
 
 @app.route("/logout")
 @login_required
