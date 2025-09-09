@@ -31,6 +31,7 @@ function attachEyeToggle(wrapper) {
         btn.type = 'button';
         btn.className = 'eye';
         btn.textContent = '👁';
+        btn. style.size ='1.5px'
         btn.style.position='absolute';
         btn.style.right='0';
         btn.style.top='50%';
