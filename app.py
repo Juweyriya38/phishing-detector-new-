@@ -15,7 +15,6 @@ import os
 import json as _json
 import secrets
 import string
-
 # Load environment variables from a .env file in the same directory as this app.py
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
@@ -950,7 +949,7 @@ def analyze_url():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'gemma2-9b-it',
                 'messages': [
                     {
                         'role': 'system',
@@ -1035,7 +1034,7 @@ def ext_analyze_url():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
@@ -1113,7 +1112,7 @@ def analyze_email():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
@@ -1198,7 +1197,7 @@ def ext_analyze_email():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
@@ -1298,7 +1297,7 @@ def analyze_file():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
@@ -1390,7 +1389,7 @@ def analyze_phone():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
@@ -1472,7 +1471,7 @@ def analyze_pretexting():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama3-8b-8192',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
