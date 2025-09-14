@@ -33,7 +33,7 @@
     <div class="card">
       <h3>Profile Image</h3>
       <div style="display:flex;gap:16px;align-items:center;">
-        <img id="avatar" class="avatar" src="{{ '/static/' + (user.profile_image or 'assets/photo_2025-09-14_03-58-38.jpg') }}" alt="avatar"><br> 
+        <img id="avatar" class="avatar" src="{{ '/static/' + (user.profile_image or 'assets/add_profile.jpg') }}" alt="avatar"><br> 
         <form id="imgForm" enctype="multipart/form-data">
           <input type="file" name="image" accept="image/*" required><br></br>
           <button class="btn" type="submit">Upload</button>
@@ -124,5 +124,6 @@
   </script>
 </body>
 </html>
+
 
 
