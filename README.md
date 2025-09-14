@@ -78,24 +78,28 @@ WAF: Custom Python middleware for rate limiting & attack detection
 
 🚀 Getting Started
 1. Clone the Repository
-'''
+'''bash
 git clone https://github.com/Animhassen/phishing-detector.git
 cd phishing-detector
 '''
 
 3. Install Dependencies
-'''pip install -r requirements.txt'''
+'''bash
+pip install -r requirements.txt
+'''
 
-4. Configure Environment
+5. Configure Environment
 
 Create a .env file in the root directory:
 
-'''
+'''bash
 GROQ_API_KEY=your_groq_api_key
 '''
 
 4. Run the Server
-'''python app.py'''
+'''bash
+python app.py
+'''
 
 
 Visit → http://127.0.0.1:2000
