@@ -727,7 +727,7 @@ def admin_reset_password(user_id: int):
         return jsonify({'error': 'Password must be 8+ chars, include an uppercase letter and a number'}), 400
     user.set_password(new_password)
     # Admin change allowed any time; do not enforce once-only limit
-    user.admin_reset_count = user.admin_reset_count + 1
+    user.admin_reset_count = user.admin_reset_count + 0
     # Invalidate any active temporary password
     user.temp_password_hash = None
     user.temp_password_expires_at = None
