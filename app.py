@@ -949,7 +949,7 @@ def analyze_url():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'gemma2-9b-it',
+                'model': 'moonshotai/kimi-k2-instruct-0905',
                 'messages': [
                     {
                         'role': 'system',
