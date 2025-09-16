@@ -1,247 +1,393 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Blocked IPs Dashboard</title>
-  
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background: #f4f6f9;
-      margin: 0;
-      padding: 20px;
-      color: #333;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 20px;
-      color: #222;
-    }
-    .container {
-      max-width: 1000px;
-      margin: auto;
-      background: #fff;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    th, td {
-      text-align: left;
-      padding: 12px;
-    }
-    th {
-      background: #007BFF;
-      color: white;
-    }
-    tr:nth-child(even) {
-      background: #f8f9fc;
-    }
-    tr:hover {
-      background: #e9f2ff;
-    }
-    .tag {
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      display: inline-block;
-    }
-    .active {
-      background: #dc3545;
-      color: white;
-    }
-    .expired {
-      background: #6c757d;
-      color: white;
-    }
-    .refresh-btn {
-      display: block;
-      margin: 10px auto 20px;
-      padding: 10px 20px;
-      background: #007BFF;
-      border: none;
-      color: white;
-      border-radius: 8px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .refresh-btn:hover {
-      background: #0056b3;
-    }
+    body { font-family: 'Inter', sans-serif; background: #f4f6f9; margin:0; padding:20px; color:#333; }
+    h1 { text-align:center; margin-bottom:12px; color:#222; }
+    .container { max-width:1100px; margin:14px auto; background:#fff; padding:18px; border-radius:12px; box-shadow:0 5px 15px rgba(0,0,0,.08); }
+    .controls { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; flex-wrap:wrap; }
+    .btn { padding:10px 14px; border-radius:8px; border:none; cursor:pointer; font-weight:600; font-size:13px; }
+    .btn.primary { background:#007BFF; color:#fff; }
+    .btn.danger { background:#dc3545; color:#fff; }
+    .btn.ghost { background:transparent; color:#007BFF; border:1px solid rgba(0,0,0,0.06); }
+    table { width:100%; border-collapse:collapse; margin-top:8px; font-size:14px; }
+    th, td { text-align:left; padding:10px 12px; vertical-align:middle; }
+    th { background:#007BFF; color:#fff; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+    tr:nth-child(even) td { background:#fbfdff; }
+    tr:hover td { background:#eef6ff; }
+    .tag { padding:6px 8px; border-radius:8px; font-weight:700; font-size:12px; display:inline-block; }
+    .tag.active { background:#dc3545; color:#fff; }
+    .tag.expired { background:#6c757d; color:#fff; }
+    .muted { color:#666; font-size:13px; }
+    .clear-btn { background:#6c757d; color:#fff; }
+    @media (max-width:900px) { th, td { padding:8px; font-size:13px } .controls { gap:8px } }
   </style>
 </head>
 <body>
   <h1>🚨 Blocked IPs Dashboard</h1>
+
   <div class="container">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
-      <a href="/admin/logout" style="background: #dc3545; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px;">🚪 Logout</a>
+    <div class="controls">
+      <div>
+        <button id="refreshBtn" class="btn primary">🔄 Refresh</button>
+        <button id="clearPrevBtn" class="btn ghost" title="Clear previous (local)">🧹 Clear Previous</button>
+      </div>
+      <div>
+        <a href="/admin/logout" class="btn danger">🚪 Logout</a>
+      </div>
     </div>
-    <table>
+
+    <table aria-label="Active blocked IPs">
       <thead>
         <tr>
           <th>IP Address</th>
-          <th>Penalty (s)</th>
-          <th>Remaining (s)</th>
-          <th>Blocks</th>
+          <th style="width:90px">Penalty (s)</th>
+          <th style="width:110px">Remaining (s)</th>
+          <th style="width:70px">Blocks</th>
           <th>Reason</th>
-          <th>Category</th>
-          <th>Reason Tag</th>
-          <th>Last Block</th>
-          <th>Status</th>
-          <th>Actions</th>
+          <th style="width:120px">Category</th>
+          <th style="width:80px">Tag</th>
+          <th style="width:170px">Last Block</th>
+          <th style="width:90px">Status</th>
+          <th style="width:110px">Actions</th>
         </tr>
       </thead>
-      <tbody id="ipTable"></tbody>
+      <tbody id="ipTable">
+        <tr><td colspan="10" class="muted" style="text-align:center;">Loading...</td></tr>
+      </tbody>
     </table>
   </div>
 
-  <script>
-    let updateInterval;
-    
-    async function loadData() {
-      try {
-        const res = await fetch("/status", {
-          credentials: 'include' // Include session cookies
-        });
-        
-        if (res.status === 401) {
-          // Redirect to admin login if not authenticated
-          window.location.href = "/admin";
-          return;
-        }
-        
-        const data = await res.json();
+  <div class="container" style="margin-top:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0; font-size:16px;">📜 Previous Blocked IPs (history)</h2>
+      <div>
+        <button id="exportPrevBtn" class="btn ghost">⬇️ Export</button>
+      </div>
+    </div>
 
-        const tbody = document.getElementById("ipTable");
-        tbody.innerHTML = "";
+    <table aria-label="Previous blocked IPs" style="margin-top:8px;">
+      <thead>
+        <tr>
+          <th>IP Address</th>
+          <th style="width:90px">Penalty (s)</th>
+          <th style="width:70px">Blocks</th>
+          <th>Reason</th>
+          <th style="width:160px">Expired At</th>
+        </tr>
+      </thead>
+      <tbody id="previousTable">
+        <tr><td colspan="5" class="muted" style="text-align:center;">No previous records</td></tr>
+      </tbody>
+    </table>
+  </div>
 
-        if (Object.keys(data.blocked).length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">No blocked IPs at the moment</td></tr>';
-          return;
-        }
+<script>
+/*
+  Key points:
+  - activeIPs: local copy of currently-active blocked IPs (from /status).
+  - previousIPs: array persisted in localStorage, unique by ip (no duplicates).
+  - when an active ip remaining <= 0 we move it once to previousIPs (no duplicates).
+  - manual unblock also moves to previous (if not already present).
+  - countdown interval runs every 1s and updates remaining in DOM & activeIPs.
+*/
 
-        for (const [ip, info] of Object.entries(data.blocked)) {
-          const tr = document.createElement("tr");
-          const remaining = info.remaining || 0;
-          const status = remaining > 0 ? "active" : "expired";
-          const lastBlockTime = info.last_block_time ? new Date(info.last_block_time).toLocaleString() : "N/A";
+const PREV_KEY = 'waf_previous_ips_v1';
+let activeIPs = {};        // { ip: { penalty, blocks, last_reason, last_block_time, remaining } }
+let previousIPs = loadPreviousFromStorage(); // array of {ip, penalty, blocks, reason, expiredAt}
 
-          const category = categorizeReason(info.last_reason || "");
-          const tag = shortReasonTag(info.last_reason || "");
-          tr.innerHTML = `
-            <td>${ip}</td>
-            <td>${info.penalty}</td>
-            <td id="remaining-${ip.replace(/\./g, '-')}">${remaining}</td>
-            <td>${info.blocks}</td>
-            <td>${info.last_reason || "N/A"}</td>
-            <td>${category}</td>
-            <td>${tag}</td>
-            <td>${lastBlockTime}</td>
-            <td><span class="tag ${status}">${status.toUpperCase()}</span></td>
-            <td>
-              ${remaining > 0 ? `<button onclick="unblockIP('${ip}')" style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Unblock</button>` : ''}
-            </td>
-          `;
-          tbody.appendChild(tr);
-        }
-        
-        // Update countdown timers
-        updateCountdowns();
-        
-      } catch (err) {
-        console.error("Failed to load data:", err);
-        document.getElementById("ipTable").innerHTML = '<tr><td colspan="7" style="text-align: center; color: #dc3545;">Error loading data. Please refresh the page.</td></tr>';
-      }
-    }
+let statusInterval = null;
+let countdownInterval = null;
 
-    function categorizeReason(reason) {
-      const r = (reason||'').toLowerCase();
-      if (r.includes('brut') || r.includes('password') || r.includes('login')) return 'brute-force';
-      if (r.includes('ddos')) return 'ddos';
-      if (r.includes('dos')) return 'dos';
-      if (r.includes('flood') || r.includes('too many') || r.includes('rate')) return 'flooding';
-      if (r.includes('scan') || r.includes('fuzz') || r.includes('probe')) return 'fuzzing';
-      return 'other';
-    }
-    function shortReasonTag(reason){
-      const r=(reason||'').toLowerCase();
-      if (r.includes('brut') || r.includes('password') || r.includes('login')) return 'BRUTE';
-      if (r.includes('ddos')) return 'DDOS';
-      if (r.includes('dos')) return 'DOS';
-      if (r.includes('flood') || r.includes('too many') || r.includes('rate')) return 'FLOOD';
-      if (r.includes('scan') || r.includes('fuzz') || r.includes('probe')) return 'FUZZ';
-      return 'OTHER';
-    }
-    
-    function updateCountdowns() {
-      const remainingElements = document.querySelectorAll('[id^="remaining-"]');
-      remainingElements.forEach(element => {
-        const currentValue = parseInt(element.textContent);
-        if (currentValue > 0) {
-          element.textContent = currentValue - 1;
-        }
-      });
-    }
-    
-    async function unblockIP(ip) {
-      if (!confirm(`Are you sure you want to unblock ${ip}?`)) {
-        return;
-      }
-      
-      try {
-        const res = await fetch(`/unblock/${ip}`, {
-          method: 'POST',
-          credentials: 'include'
-        });
-        
-        if (res.ok) {
-          loadData(); // Refresh the data
-        } else {
-          alert('Failed to unblock IP');
-        }
-      } catch (err) {
-        console.error('Error unblocking IP:', err);
-        alert('Error unblocking IP');
-      }
-    }
-    
-    function startAutoUpdate() {
-      // Load data immediately
-      loadData();
-      
-      // Update every 5 seconds for real-time feel
-      updateInterval = setInterval(() => {
-        loadData();
-      }, 5000);
-      
-      // Update countdowns every second
-      setInterval(updateCountdowns, 1000);
-    }
-    
-    function stopAutoUpdate() {
-      if (updateInterval) {
-        clearInterval(updateInterval);
-      }
-    }
-    
-    // Start auto-updates when page loads
-    startAutoUpdate();
-    
-    // Stop updates when page is hidden, resume when visible
-    document.addEventListener('visibilitychange', function() {
-      if (document.hidden) {
-        stopAutoUpdate();
-      } else {
-        startAutoUpdate();
-      }
+// Utility: sanitize id for DOM
+function idForIp(ip){ return 'remaining-' + ip.replace(/[^a-zA-Z0-9]/g, '-'); }
+
+// Persist previous to localStorage
+function savePreviousToStorage(){
+  try { localStorage.setItem(PREV_KEY, JSON.stringify(previousIPs)); }
+  catch(e){ console.warn('Failed saving previous:', e); }
+}
+
+// Load previous (unique) from storage
+function loadPreviousFromStorage(){
+  try {
+    const raw = localStorage.getItem(PREV_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    // ensure uniqueness by ip
+    const map = {};
+    for (const r of arr) map[r.ip] = r;
+    return Object.values(map).sort((a,b) => new Date(b.expiredAt) - new Date(a.expiredAt));
+  } catch(e){
+    console.warn('Failed to parse previous storage:', e);
+    return [];
+  }
+}
+
+// Check if previous contains ip
+function previousHas(ip){
+  return previousIPs.some(p => p.ip === ip);
+}
+
+// Add or update previous (keeps unique)
+function addOrUpdatePrevious(ip, info){
+  // "info" expected: { penalty, blocks, last_reason, last_block_time } or similar
+  const nowISO = new Date().toISOString();
+  const reason = info && (info.last_reason || info.reason) ? (info.last_reason || info.reason) : 'N/A';
+  const penalty = info && (typeof info.penalty !== 'undefined') ? info.penalty : (info.penalty === 0 ? 0 : (info.penalty || null));
+  const blocks = info && (info.blocks || info.blocks === 0) ? info.blocks : (info.blocks || 1);
+  const last_block_time = info && info.last_block_time ? info.last_block_time : null;
+
+  const idx = previousIPs.findIndex(p => p.ip === ip);
+  if (idx === -1){
+    previousIPs.unshift({
+      ip,
+      penalty: penalty,
+      blocks: blocks,
+      reason: reason,
+      expiredAt: (new Date()).toISOString(),
+      last_block_time: last_block_time
     });
-  </script>
+  } else {
+    // update existing record (merge)
+    const existing = previousIPs[idx];
+    existing.penalty = penalty !== null ? penalty : existing.penalty;
+    existing.blocks = Math.max(existing.blocks || 0, blocks || 0);
+    existing.reason = reason || existing.reason;
+    existing.expiredAt = (new Date()).toISOString();
+    existing.last_block_time = last_block_time || existing.last_block_time;
+    // move to front
+    previousIPs.splice(idx,1);
+    previousIPs.unshift(existing);
+  }
+  savePreviousToStorage();
+  renderPrevious();
+}
+
+// Render active IPs table from activeIPs
+function renderActive(){
+  const tbody = document.getElementById('ipTable');
+  tbody.innerHTML = '';
+  const keys = Object.keys(activeIPs);
+  if (!keys.length){
+    tbody.innerHTML = '<tr><td colspan="10" class="muted" style="text-align:center;">No blocked IPs at the moment</td></tr>';
+    return;
+  }
+  // Sort by remaining desc
+  keys.sort((a,b) => (activeIPs[a].remaining||0) - (activeIPs[b].remaining||0));
+  for (const ip of keys){
+    const info = activeIPs[ip];
+    const remaining = Math.max(0, parseInt(info.remaining || 0));
+    const category = categorizeReason(info.last_reason || '');
+    const tag = shortReasonTag(info.last_reason || '');
+    const lastBlockTime = info.last_block_time ? new Date(info.last_block_time).toLocaleString() : 'N/A';
+
+    // If >0 show row; if <=0 skip (it will be moved by countdown or load)
+    if (remaining <= 0) continue;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${ip}</td>
+      <td>${info.penalty ?? '-'}</td>
+      <td id="${idForIp(ip)}">${remaining}</td>
+      <td>${info.blocks ?? 0}</td>
+      <td>${escapeHtml(info.last_reason || 'N/A')}</td>
+      <td>${category}</td>
+      <td><span class="tag active">${tag}</span></td>
+      <td>${lastBlockTime}</td>
+      <td><span class="tag active">ACTIVE</span></td>
+      <td>
+        <button class="btn" style="background:#dc3545;color:#fff;border-radius:6px;padding:6px;font-size:12px;" onclick="unblockIP('${ip}')">Unblock</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// Render previous table
+function renderPrevious(){
+  const tbody = document.getElementById('previousTable');
+  tbody.innerHTML = '';
+  if (!previousIPs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center;">No previous records</td></tr>';
+    return;
+  }
+  // sort by expiredAt desc
+  previousIPs.sort((a,b) => new Date(b.expiredAt) - new Date(a.expiredAt));
+  for (const rec of previousIPs){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${rec.ip}</td>
+      <td>${rec.penalty ?? '-'}</td>
+      <td>${rec.blocks ?? 0}</td>
+      <td>${escapeHtml(rec.reason || '')}</td>
+      <td>${(new Date(rec.expiredAt)).toLocaleString()}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// escape HTML for safety
+function escapeHtml(s){
+  if (!s) return '';
+  return String(s).replace(/[&<>"'`=\/]/g, function(ch){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;",'/':'&#47;','`':'&#96;','=':'&#61;'})[ch];
+  });
+}
+
+// categorize helpers
+function categorizeReason(reason) {
+  const r = (reason||'').toLowerCase();
+  if (r.includes('brut') || r.includes('password') || r.includes('login')) return 'brute-force';
+  if (r.includes('ddos')) return 'ddos';
+  if (r.includes('dos')) return 'dos';
+  if (r.includes('flood') || r.includes('too many') || r.includes('rate')) return 'flooding';
+  if (r.includes('scan') || r.includes('fuzz') || r.includes('probe')) return 'fuzzing';
+  return 'other';
+}
+function shortReasonTag(reason){
+  const r=(reason||'').toLowerCase();
+  if (r.includes('brut') || r.includes('password') || r.includes('login')) return 'BRUTE';
+  if (r.includes('ddos')) return 'DDOS';
+  if (r.includes('dos')) return 'DOS';
+  if (r.includes('flood') || r.includes('too many') || r.includes('rate')) return 'FLOOD';
+  if (r.includes('scan') || r.includes('fuzz') || r.includes('probe')) return 'FUZZ';
+  return 'OTHER';
+}
+
+// Fetch /status and sync activeIPs. Ensures expired entries are moved to previous (once).
+async function loadData(){
+  try {
+    const res = await fetch('/status', { credentials: 'include' });
+    if (res.status === 401){ window.location.href = '/admin'; return; }
+    const data = await res.json();
+    const blocked = data.blocked || {};
+
+    // Build a fresh active map from server, but do not duplicate previous entries
+    const newActive = {};
+    for (const [ip, info] of Object.entries(blocked)){
+      const remaining = Number(info.remaining) || 0;
+      if (remaining <= 0){
+        // expired on server - move to previous (if not already)
+        addOrUpdatePrevious(ip, info);
+        continue;
+      }
+      // keep it active
+      newActive[ip] = {
+        penalty: info.penalty,
+        blocks: info.blocks,
+        last_reason: info.last_reason,
+        last_block_time: info.last_block_time,
+        remaining: remaining
+      };
+      // Also ensure historical record exists? We will only add when expired (per requirement)
+    }
+    activeIPs = newActive;
+    renderActive();
+    renderPrevious();
+  } catch (err) {
+    console.error('Failed to load /status:', err);
+    const tbody = document.getElementById('ipTable');
+    tbody.innerHTML = '<tr><td colspan="10" class="muted" style="text-align:center;color:#dc3545;">Error loading data. Please refresh.</td></tr>';
+  }
+}
+
+// Countdown: run every second, decrement remaining and move expired to previous (once).
+function startCountdown(){
+  if (countdownInterval) return;
+  countdownInterval = setInterval(()=>{
+    const ipList = Object.keys(activeIPs);
+    if (!ipList.length) {
+      // nothing active; still keep timer running to be safe
+      return;
+    }
+    for (const ip of ipList){
+      const rec = activeIPs[ip];
+      if (!rec || typeof rec.remaining === 'undefined') continue;
+      if (rec.remaining > 0){
+        rec.remaining -= 1;
+        const el = document.getElementById(idForIp(ip));
+        if (el) el.textContent = rec.remaining;
+        if (rec.remaining <= 0){
+          // move to previous (only once)
+          addOrUpdatePrevious(ip, rec);
+          // remove from active map and remove row from DOM
+          delete activeIPs[ip];
+          const rowEl = document.getElementById(idForIp(ip))?.closest('tr');
+          if (rowEl) rowEl.remove();
+        }
+      } else {
+        // already <=0: safe guard
+        addOrUpdatePrevious(ip, rec);
+        delete activeIPs[ip];
+      }
+    }
+    // after decrement, if activeIPs empty we may still render (clear table)
+    renderActive();
+  }, 1000);
+}
+
+// Manual unblock: call server, and if successful add to previous (if not already).
+async function unblockIP(ip){
+  if (!confirm(`Are you sure you want to unblock ${ip}?`)) return;
+  try {
+    const res = await fetch(`/unblock/${ip}`, { method: 'POST', credentials: 'include' });
+    if (!res.ok){
+      alert('Failed to unblock IP (server error).');
+      return;
+    }
+    // On success: if we had local active info, use it to add to previous; otherwise add minimal record
+    const info = activeIPs[ip];
+    if (info) addOrUpdatePrevious(ip, info);
+    else addOrUpdatePrevious(ip, { penalty:null, blocks:1, last_reason:'manual-unblock' });
+    // Remove from active
+    delete activeIPs[ip];
+    renderActive();
+  } catch (err){
+    console.error('unblock error', err);
+    alert('Error unblocking IP');
+  }
+}
+
+// Clear previous list (localStorage)
+function clearPrevious(){
+  if (!confirm('Clear all previous IP history? This cannot be undone locally.')) return;
+  previousIPs = [];
+  savePreviousToStorage();
+  renderPrevious();
+}
+
+// Export previous as JSON
+function exportPrevious(){
+  const data = JSON.stringify(previousIPs, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'previous_blocks.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// UI bindings
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.getElementById('clearPrevBtn').addEventListener('click', clearPrevious);
+document.getElementById('exportPrevBtn').addEventListener('click', exportPrevious);
+
+// Kick off
+(async function init(){
+  // render previous from storage first
+  renderPrevious();
+  await loadData();
+  startCountdown();
+  // refresh server state every 5s
+  if (statusInterval) clearInterval(statusInterval);
+  statusInterval = setInterval(loadData, 5000);
+  // Make sure countdown is running
+  startCountdown();
+})();
+
+</script>
 </body>
 </html>
