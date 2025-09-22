@@ -505,12 +505,14 @@ def _save_admin_secret(new_password: str, is_primary: bool = True):
 ADMIN_PASSWORD_DATA = _load_admin_secret()
 
 @app.route("/admin", methods=["GET", "POST"])
+@app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     # If already authenticated, show admin home
     if request.method == "GET" and session.get("admin"):
-        return render_template("admin_home.html")
+        return redirect(url_for("admin_home"))
     if request.method == "POST":
         password = request.form.get("password")
+        username = request.form.get("username")  # Support username field
         if password:
             # Check both primary and secondary passwords
             primary_hash = ADMIN_PASSWORD_DATA.get('primary_password_hash')
@@ -521,10 +523,16 @@ def admin_login():
                 session["admin"] = True
                 session.permanent = True
                 session["last_activity"] = datetime.utcnow().isoformat()
-                return redirect(url_for("admin_login"))
+                return redirect(url_for("admin_home"))
         
         return render_template("admin_login.html", error="Invalid password")
     return render_template("admin_login.html", error=None)
+
+@app.route("/admin/home")
+def admin_home():
+    if not session.get("admin"):
+        return redirect(url_for("admin_login"))
+    return render_template("admin_home.html")
 
 @app.route("/admin/dashboard")
 def blocked_dashboard():
@@ -661,21 +669,14 @@ def login_assets_js():
 # ----------------------------
 # Admin Users Dashboard (session-based admin only)
 # ----------------------------
-@app.route('/admin/users', methods=['GET'])
-def admin_users_page():
+@app.route('/admin/users')
+def admin_users():
     if not session.get('admin'):
         return redirect(url_for('admin_login'))
     return render_template('admin_users.html')
 
-@app.route('/admin/trash', methods=['GET'])
-def admin_trash_page():
-    if not session.get('admin'):
-        return redirect(url_for('admin_login'))
-    # Render directly from templates to avoid 404s
-    return render_template('admin_trash.html')
-
-@app.route('/admin/trash.html', methods=['GET'])
-def admin_trash_page_html():
+@app.route('/admin/trash')
+def admin_trash():
     if not session.get('admin'):
         return redirect(url_for('admin_login'))
     return render_template('admin_trash.html')
