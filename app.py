@@ -867,7 +867,7 @@ def index():
         return render_template("index.html", user=current_user)
     else:
         # Guests see the normal landing page
-        return render_template("index1.html", user=current_user)
+        return render_template("dashboard.html", user=current_user)
 
 # Protected index.html page
 @app.route("/index")
